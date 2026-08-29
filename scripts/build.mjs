@@ -54,7 +54,7 @@ function header() {
 <header class="site-header"><div class="container header-inner">${logo()}
 <button class="menu-button" type="button" data-menu-button aria-expanded="false" aria-controls="primary-nav" aria-label="Open navigation"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
 <nav class="nav" id="primary-nav" data-menu aria-label="Primary navigation">
-<a href="/#services">Services</a><a href="/#why">Why Republic</a>${business.googleReviewCount ? '<a href="/#reviews">Reviews</a>' : ''}<a href="/#service-area">Service Area</a><a href="/#contact">Contact</a>${contactButton('Schedule Service')}
+<a href="/#services">Services</a><a href="/#why">Why Republic</a>${business.googleReviewCount ? '<a href="/#reviews">Reviews</a>' : ''}<a href="/service-area/">Service Area</a><a href="/#contact">Contact</a>${contactButton('Schedule Service')}
 </nav></div></header>`;
 }
 
@@ -65,7 +65,7 @@ function footer() {
   return `<footer class="site-footer"><div class="container"><div class="footer-grid">
 <div class="footer-brand">${logo()}<p>Heating and cooling service for residential and commercial properties. Final business details must be verified before production launch.</p></div>
 <div class="footer-col"><h3>Services</h3><ul>${serviceLinks}</ul></div>
-<div class="footer-col"><h3>Company</h3><ul><li><a href="/#why">Why Republic</a></li><li><a href="/#service-area">Service Area</a></li><li><a href="/#faq">FAQ</a></li><li><a href="/#contact">Contact</a></li></ul></div>
+<div class="footer-col"><h3>Company</h3><ul><li><a href="/#why">Why Republic</a></li><li><a href="/service-area/">Service Area</a></li><li><a href="/#faq">FAQ</a></li><li><a href="/#contact">Contact</a></li></ul></div>
 <div class="footer-col"><h3>Contact</h3><ul><li>${phone}</li><li>${email}</li><li>${esc(serviceAreaLabel)}</li></ul></div>
 </div><div class="footer-bottom"><span>© <span data-year></span> ${esc(business.name)}. All rights reserved.</span><span>Production launch requires verified owner information.</span></div></div></footer>
 ${!configured ? '<div class="preview-flag">Owner details required before launch</div>' : ''}
@@ -73,15 +73,55 @@ ${!configured ? '<div class="preview-flag">Owner details required before launch<
 }
 
 function localBusinessJsonLd() {
-  const data = { '@context':'https://schema.org', '@type':'LocalBusiness', name: business.name, description:'Residential and commercial heating and cooling services.' };
-  if (has(business.siteUrl)) data.url = business.siteUrl;
-  if (has(business.phone)) data.telephone = business.phone;
-  if (has(business.email)) data.email = business.email;
-  if (business.serviceAreas?.length) data.areaServed = business.serviceAreas.map(name => ({ '@type':'City', name }));
-  if (business.address) data.address = { '@type':'PostalAddress', streetAddress:business.address, addressLocality:business.city, addressRegion:business.state, postalCode:business.zip, addressCountry:'US' };
-  if (business.googleBusinessProfileUrl) data.sameAs = [business.googleBusinessProfileUrl, business.facebookUrl, business.instagramUrl].filter(Boolean);
-  if (business.googleRating && business.googleReviewCount) data.aggregateRating = { '@type':'AggregateRating', ratingValue:business.googleRating, reviewCount:business.googleReviewCount };
-  return `<script type="application/ld+json">${JSON.stringify(data)}</script>`;
+  const baseId = has(business.siteUrl) ? business.siteUrl.replace(/\/$/, '') : '';
+  const localId = baseId ? `${baseId}/#${business.shortName.replace(/\s+/g, '-').toLowerCase()}` : undefined;
+
+  const areaServed = (business.serviceAreas?.length ? business.serviceAreas : [business.city]).filter(Boolean)
+    .map(name => ({ '@type':'City', name }));
+
+  const localBusiness = { '@id': localId, '@type':'LocalBusiness', name: business.name, description:'Residential and commercial heating and cooling services.' };
+  if (baseId) localBusiness.url = baseId;
+  if (has(business.phone)) localBusiness.telephone = business.phone;
+  if (has(business.email)) localBusiness.email = business.email;
+  if (areaServed.length) localBusiness.areaServed = areaServed;
+  if (business.address || (business.city && business.state)) {
+    localBusiness.address = {
+      '@type':'PostalAddress',
+      streetAddress: has(business.address) ? business.address : undefined,
+      addressLocality: has(business.city) ? business.city : undefined,
+      addressRegion: has(business.state) ? business.state : undefined,
+      postalCode: has(business.zip) ? business.zip : undefined,
+      addressCountry:'US'
+    };
+    Object.keys(localBusiness.address).forEach(k => localBusiness.address[k] === undefined && delete localBusiness.address[k]);
+  }
+  if (business.latitude && business.longitude) {
+    localBusiness.geo = { '@type':'GeoCoordinates', latitude: business.latitude, longitude: business.longitude };
+  }
+  if (business.hours?.length) {
+    localBusiness.openingHours = business.hours.map(h => (h.days || []).map(d => `${d} ${h.open || ''}-${h.close || ''}`)).flat().filter(Boolean);
+  }
+  if (business.googleBusinessProfileUrl) localBusiness.sameAs = [business.googleBusinessProfileUrl, business.facebookUrl, business.instagramUrl].filter(Boolean);
+  if (business.googleRating && business.googleReviewCount) localBusiness.aggregateRating = { '@type':'AggregateRating', ratingValue: business.googleRating, reviewCount: business.googleReviewCount };
+  if (services.length) localBusiness.makesOffer = { '@type':'OfferCatalog', name:`${business.name} services`, itemListElement: services.map(s => ({ '@type':'Offer', itemOffered: { '@type':'Service', name: s.name, serviceType: s.name, description: s.summary, areaServed: areaServed.length ? areaServed : undefined, provider: localId ? { '@id': localId } : undefined } })) };
+
+  const graph = [localBusiness];
+
+  const faqItems = [
+    ['What HVAC services does Republic HVAC provide?', 'The current service offering includes AC repair and installation, heating and furnace service, heat-pump service, preventive HVAC maintenance, and residential and commercial heating and cooling work.'],
+    ['How do I know whether to repair or replace my system?', 'The right choice depends on the equipment condition, age, repair history, comfort performance, and the cost and scope of the current issue. A diagnosis should come before a replacement recommendation.'],
+    ['How often should HVAC equipment be maintained?', 'Maintenance frequency depends on the equipment and manufacturer guidance. Seasonal inspections are commonly used to identify airflow, operating, and wear issues before periods of heavy use.'],
+    ['What information should I provide when requesting service?', 'Your contact information, service address or ZIP code, equipment type if known, and a short description of the symptoms help make the first follow-up more useful.'],
+    ['Does Republic HVAC work with commercial properties?', 'Yes. The existing Republic HVAC website describes its heating and cooling services as serving both residential and commercial spaces.']
+  ];
+  if (business.emergencyServiceVerified) faqItems.push(['Do you offer emergency HVAC service?', 'Yes. Emergency HVAC service availability has been verified for the business.']);
+
+  graph.push({
+    '@type':'FAQPage',
+    mainEntity: faqItems.map(([q, a]) => ({ '@type':'Question', name: q, acceptedAnswer: { '@type':'Answer', text: a } }))
+  });
+
+  return `<script type="application/ld+json">${JSON.stringify({ '@context':'https://schema.org', '@graph': graph })}</script>`;
 }
 
 function shell({ title, description, pathname='/', body }) {
@@ -94,6 +134,111 @@ function serviceIcon(service) {
   if (service.slug.includes('heat') || service.slug.includes('furnace')) return icons.flame;
   if (service.slug.includes('commercial')) return icons.building;
   return icons.tool;
+}
+
+function faqList() {
+  const base = `<details><summary>What HVAC services does Republic HVAC provide?</summary><p>The current service offering includes AC repair and installation, heating and furnace service, heat-pump service, preventive HVAC maintenance, and residential and commercial heating and cooling work.</p></details><details><summary>How do I know whether to repair or replace my system?</summary><p>The right choice depends on the equipment condition, age, repair history, comfort performance, and the cost and scope of the current issue. A diagnosis should come before a replacement recommendation.</p></details><details><summary>How often should HVAC equipment be maintained?</summary><p>Maintenance frequency depends on the equipment and manufacturer guidance. Seasonal inspections are commonly used to identify airflow, operating, and wear issues before periods of heavy use.</p></details><details><summary>What information should I provide when requesting service?</summary><p>Your contact information, service address or ZIP code, equipment type if known, and a short description of the symptoms help make the first follow-up more useful.</p></details><details><summary>Does Republic HVAC work with commercial properties?</summary><p>Yes. The existing Republic HVAC website describes its heating and cooling services as serving both residential and commercial spaces.</p></details>`;
+  return business.emergencyServiceVerified ? base + '<details><summary>Do you offer emergency HVAC service?</summary><p>Yes. Emergency HVAC service availability has been verified for the business.</p></details>' : base;
+}
+
+function questionnaireSection() {
+  const endpoint = has(business.formEndpoint) ? business.formEndpoint : '#';
+  return `<section class="section section--soft" id="quiz"><div class="container"><div class="section-head center"><p class="eyebrow">Quick triage</p><h2>Tell us what’s going on in under a minute.</h2><p class="lede">Answer a few short questions. We’ll put together a clear summary of your situation that you can send straight to the Republic HVAC team.</p></div>
+<div class="quiz-panel">
+  <form data-quiz-form action="${esc(endpoint)}" method="post">
+    <div class="quiz-progress" data-quiz-progress aria-live="polite"><span>Step <b data-quiz-step>1</b> of 5</span><i data-quiz-bar></i></div>
+
+    <div class="quiz-step" data-step="1" data-quiz-step-panel>
+      <fieldset class="quiz-fieldset">
+        <legend>What is your main concern?</legend>
+        <div class="quiz-options">
+          <label class="quiz-option"><input type="radio" name="concern" value="Cooling problem"><span>${icons.snow}</span><strong>Cooling</strong><small>AC that isn’t cooling or acting up</small></label>
+          <label class="quiz-option"><input type="radio" name="concern" value="Heating problem"><span>${icons.flame}</span><strong>Heating</strong><small>Furnace or heat not working</small></label>
+          <label class="quiz-option"><input type="radio" name="concern" value="Maintenance"><span>${icons.tool}</span><strong>Maintenance</strong><small>Routine tune-up or check-up</small></label>
+          <label class="quiz-option"><input type="radio" name="concern" value="Commercial"><span>${icons.building}</span><strong>Commercial</strong><small>A business space</small></label>
+          <label class="quiz-option"><input type="radio" name="concern" value="Not sure"><span>${icons.wave}</span><strong>Not sure</strong><small>Just describe the problem</small></label>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="quiz-step" data-step="2" data-quiz-step-panel hidden>
+      <fieldset class="quiz-fieldset">
+        <legend>Tell us a little more.</legend>
+        <div class="quiz-options" data-quiz-branch="cooling" hidden>
+          <label class="quiz-option"><input type="radio" name="detail" value="Warm or weak airflow"><span>${icons.snow}</span><strong>Warm / weak airflow</strong><small>Not cooling like it should</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Strange noises"><span>${icons.wave}</span><strong>Strange noises</strong><small>Rattling, hissing, or banging</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Won’t turn on"><span>${icons.tool}</span><strong>Won’t turn on</strong><small>No power or response</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Odd smell"><span>${icons.flame}</span><strong>Odd smell</strong><small>A burning or musty odor</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Something else"><span>${icons.wave}</span><strong>Something else</strong><small>Describe it on the next page</small></label>
+        </div>
+        <div class="quiz-options" data-quiz-branch="heating" hidden>
+          <label class="quiz-option"><input type="radio" name="detail" value="No heat"><span>${icons.flame}</span><strong>No heat</strong><small>The system runs but doesn’t warm up</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Uneven rooms"><span>${icons.wave}</span><strong>Uneven rooms</strong><small>Some rooms stay cold</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Short cycling"><span>${icons.tool}</span><strong>Short cycling</strong><small>Turns on and off constantly</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Strange noises"><span>${icons.wave}</span><strong>Strange noises</strong><small>Rattling, hissing, or banging</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Something else"><span>${icons.wave}</span><strong>Something else</strong><small>Describe it on the next page</small></label>
+        </div>
+        <div class="quiz-options" data-quiz-branch="maintenance" hidden>
+          <label class="quiz-option"><input type="radio" name="detail" value="Routine tune-up"><span>${icons.tool}</span><strong>Routine tune-up</strong><small>Before the peak season</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Not sure it needs service"><span>${icons.wave}</span><strong>Not sure</strong><small>Help me figure out what’s needed</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Something else"><span>${icons.wave}</span><strong>Something else</strong><small>Describe it on the next page</small></label>
+        </div>
+        <div class="quiz-options" data-quiz-branch="commercial" hidden>
+          <label class="quiz-option"><input type="radio" name="detail" value="Retail / office"><span>${icons.building}</span><strong>Retail / office</strong><small>A storefront or office space</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Restaurant / food service"><span>${icons.flame}</span><strong>Restaurant / food</strong><small>Kitchens and dining areas</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Warehouse / industrial"><span>${icons.building}</span><strong>Warehouse</strong><small>Larger or open spaces</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Other"><span>${icons.wave}</span><strong>Other</strong><small>Describe it on the next page</small></label>
+        </div>
+        <div class="quiz-options" data-quiz-branch="not-sure" hidden>
+          <label class="quiz-option"><input type="radio" name="detail" value="Just needs a look"><span>${icons.wave}</span><strong>Just needs a look</strong><small>I’m not sure what’s wrong</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Second opinion"><span>${icons.wave}</span><strong>Second opinion</strong><small>I want another diagnosis</small></label>
+          <label class="quiz-option"><input type="radio" name="detail" value="Something else"><span>${icons.wave}</span><strong>Something else</strong><small>Describe it on the next page</small></label>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="quiz-step" data-step="3" data-quiz-step-panel hidden>
+      <fieldset class="quiz-fieldset">
+        <legend>Anything you want to add?</legend>
+        <textarea name="description" data-quiz-desc placeholder="Optional: describe the equipment, when it started, or any recent changes. Your answer from the previous step is included automatically."></textarea>
+      </fieldset>
+    </div>
+
+    <div class="quiz-step" data-step="4" data-quiz-step-panel hidden>
+      <fieldset class="quiz-fieldset">
+        <legend>Where can the team reach you?</legend>
+        <div class="form-grid quiz-contact">
+          <div class="field"><label for="quiz-name">Full name</label><input id="quiz-name" name="name" autocomplete="name" data-quiz-contact required></div>
+          <div class="field"><label for="quiz-phone">Phone</label><input id="quiz-phone" name="phone" type="tel" autocomplete="tel" data-quiz-contact required></div>
+          <div class="field"><label for="quiz-email">Email</label><input id="quiz-email" name="email" type="email" autocomplete="email" data-quiz-contact required></div>
+          <div class="field"><label for="quiz-zip">ZIP / city</label><input id="quiz-zip" name="zip" inputmode="numeric" autocomplete="postal-code" data-quiz-contact></div>
+        </div>
+      </fieldset>
+    </div>
+
+    <div class="quiz-step" data-step="5" data-quiz-step-panel hidden>
+      <fieldset class="quiz-fieldset">
+        <legend>Review your request</legend>
+        <dl class="quiz-summary">
+          <div><dt>Concern</dt><dd data-quiz-s-concern>—</dd></div>
+          <div><dt>Detail</dt><dd data-quiz-s-detail>—</dd></div>
+          <div><dt>Notes</dt><dd data-quiz-s-desc>—</dd></div>
+          <div><dt>Name</dt><dd data-quiz-s-name>—</dd></div>
+          <div><dt>Contact</dt><dd data-quiz-s-contact>—</dd></div>
+          <div><dt>Service area</dt><dd data-quiz-s-zip>—</dd></div>
+        </dl>
+      </fieldset>
+    </div>
+
+    <div class="quiz-nav">
+      <button class="button button--secondary" type="button" data-quiz-back disabled>Back</button>
+      <button class="button button--primary" type="button" data-quiz-next>Next</button>
+      <button class="button button--primary" type="submit" data-quiz-submit hidden>Craft & send summary</button>
+      <p class="form-status" data-quiz-status aria-live="polite"></p>
+    </div>
+  </form>
+</div>
+</div></section>`;
 }
 
 function contactSection() {
@@ -121,8 +266,9 @@ ${emergencyCta}
 <section class="section section--soft" id="why"><div class="container split"><div class="value-panel"><p class="eyebrow">Why Republic</p><div class="number">3</div><p class="caption">A simpler service experience: identify the problem, understand the options, then decide what happens next.</p><ul class="value-checks"><li>${icons.check}<span>Diagnosis before recommendation</span></li><li>${icons.check}<span>Clear explanation of service options</span></li><li>${icons.check}<span>Residential and commercial HVAC pathways</span></li></ul></div><div><p class="eyebrow">What to expect</p><h2>Less generic marketing. More useful information.</h2><p class="lede" style="margin-top:18px">The rebuilt site avoids unsupported statistics and focuses on helping a customer understand the next step.</p><div class="expect-list"><div class="expect-item"><span class="step">01</span><div><h3>Choose the service</h3><p>Start from a dedicated cooling, heating, maintenance, or commercial page.</p></div></div><div class="expect-item"><span class="step">02</span><div><h3>Describe the issue</h3><p>Share contact information, ZIP code, service type, and what the equipment is doing.</p></div></div><div class="expect-item"><span class="step">03</span><div><h3>Get a clear follow-up</h3><p>The production form should route the request to the real business workflow once connected.</p></div></div></div></div></div></section>
 ${reviewSection}
 ${projectSection}
-<section class="section" id="service-area"><div class="container"><div class="area-box"><div><p class="eyebrow">Service area</p><h2>Proudly serving ${esc(serviceAreaLabel)}</h2><p>Republic HVAC serves College Station and nearby communities. Specific additional cities and ZIP codes can be added once confirmed by the owner.</p></div><div>${serviceAreaBody}</div></div></div></section>
-<section class="section section--soft" id="faq"><div class="container"><div class="section-head center"><p class="eyebrow">HVAC questions</p><h2>Useful answers before you request service.</h2></div><div class="faq-list"><details><summary>What HVAC services does Republic HVAC provide?</summary><p>The current service offering includes AC repair and installation, heating and furnace service, heat-pump service, preventive HVAC maintenance, and residential and commercial heating and cooling work.</p></details><details><summary>How do I know whether to repair or replace my system?</summary><p>The right choice depends on the equipment condition, age, repair history, comfort performance, and the cost and scope of the current issue. A diagnosis should come before a replacement recommendation.</p></details><details><summary>How often should HVAC equipment be maintained?</summary><p>Maintenance frequency depends on the equipment and manufacturer guidance. Seasonal inspections are commonly used to identify airflow, operating, and wear issues before periods of heavy use.</p></details><details><summary>What information should I provide when requesting service?</summary><p>Your contact information, service address or ZIP code, equipment type if known, and a short description of the symptoms help make the first follow-up more useful.</p></details><details><summary>Does Republic HVAC work with commercial properties?</summary><p>Yes. The existing Republic HVAC website describes its heating and cooling services as serving both residential and commercial spaces.</p></details>${business.emergencyServiceVerified ? '<details><summary>Do you offer emergency HVAC service?</summary><p>Yes. Emergency HVAC service availability has been verified for the business.</p></details>' : ''}</div></div></section>
+<section class="section" id="service-area"><div class="container"><div class="area-box"><div><p class="eyebrow">Service area</p><h2>Proudly serving ${esc(serviceAreaLabel)}</h2><p>Republic HVAC Services is based in ${esc(locationLabel)} and provides heating and cooling service across the surrounding area. If your property is in or near ${esc(business.city)}, it is likely within reach. Additional cities and ZIP codes are added to this page once the owner confirms them.</p><a class="link" style="margin-top:14px;display:inline-flex;align-items:center;gap:8px;color:var(--blue);font-weight:800" href="/service-area/">See the full service area ${icons.arrow}</a></div><div>${serviceAreaBody}</div></div></div></section>
+<section class="section section--soft" id="faq"><div class="container"><div class="section-head center"><p class="eyebrow">HVAC questions</p><h2>Useful answers before you request service.</h2></div><div class="faq-list">${faqList()}</div></div></section>
+${questionnaireSection()}
 ${contactSection()}`;
 }
 
@@ -140,6 +286,20 @@ ${contactSection()}`;
   return shell({ title, description, pathname:`/${service.slug}/`, body });
 }
 
+function serviceAreaPage() {
+  const areaTags = business.serviceAreas?.length ? business.serviceAreas.map(area => `<span class="area-tag">${icons.pin}${esc(area)}</span>`).join(' ') : `<span class="area-tag">${icons.pin}${esc(locationLabel)}</span>`;
+  const body = `<section class="page-hero"><div class="container"><div class="breadcrumbs"><a href="/">Home</a> / Service Area</div><p class="eyebrow">Where we work</p><h1>Heating & cooling service across ${esc(serviceAreaLabel)}</h1><p class="lede">Republic HVAC Services is based in ${esc(locationLabel)} and provides residential and commercial heating and cooling service across the surrounding area.</p><div class="page-actions">${contactButton('Request Service','primary')}${phoneButton('Call','ghost')}</div></div></section>
+<section class="section"><div class="container"><div class="info-grid">
+<article class="info-card"><p class="eyebrow">Primary location</p><h2 style="font-size:2rem">Based in ${esc(locationLabel)}</h2><p style="color:var(--muted);margin-top:12px">Republic HVAC Services operates out of ${esc(locationLabel)}. The service area is described as ${esc(serviceAreaLabel)}.</p><div style="margin-top:20px"><span class="area-tag">${icons.pin}${esc(locationLabel)}</span></div></article>
+<article class="info-card"><p class="eyebrow">Service area</p><h2 style="font-size:2rem">${esc(serviceAreaLabel)}</h2><p style="color:var(--muted);margin-top:12px">Heating, cooling, and maintenance service is available for residential and commercial properties in the area. If your property is in or near ${esc(business.city)}, it is likely within reach.</p><div style="margin-top:20px;display:flex;flex-wrap:wrap;gap:8px">${areaTags}</div></article>
+</div></div></section>
+<section class="section section--soft"><div class="container split"><div><p class="eyebrow">Local & nearby service</p><h2>A local HVAC partner in ${esc(business.city)}.</h2><p class="lede" style="margin-top:18px">Local heating and cooling service starts with a clear picture of the equipment and the property. Sharing your ZIP or city when you request service helps the team confirm availability and plan a visit.</p></div><div class="area-box" style="background:white"><div><p class="eyebrow">Request service</p><h3 style="font-size:1.6rem">Tell us where you are</h3><p>Include your city or ZIP code when you request service so the team can confirm coverage and route your request.</p></div><span class="area-tag">${icons.pin}${esc(locationLabel)}</span></div></div></section>
+<section class="section"><div class="container"><div class="section-head center"><p class="eyebrow">What to send</p><h2>Helpful details when requesting service.</h2></div><div class="service-grid"><article class="service-card"><div class="service-icon">${icons.home}</div><h3>Property location</h3><p>Your city and ZIP code help confirm service coverage and scheduling.</p></article><article class="service-card"><div class="service-icon">${icons.tool}</div><h3>Equipment type</h3><p>Whether it is central AC, a furnace, a heat pump, or a commercial unit.</p></article><article class="service-card"><div class="service-icon">${icons.check}</div><h3>Symptoms</h3><p>A short description of what the system is doing (or not doing) helps a productive first call.</p></article></div><div style="margin-top:34px;text-align:center">${contactButton('Request Service','primary')}</div></div></section>
+${questionnaireSection()}
+${contactSection()}`;
+  return shell({ title:`Service Area | ${business.shortName}`, description:`${business.name} provides heating and cooling service in ${serviceAreaLabel}. Request local HVAC service today.`, pathname:'/service-area/', body });
+}
+
 const homeTitle = `HVAC Repair & Installation in ${locationLabel} | ${business.shortName}`;
 const homeDescription = `${business.name} provides AC repair, heating service, HVAC installation, maintenance, and commercial HVAC support in ${serviceAreaLabel}. Request service today.`;
 await writeFile(path.join(out, 'index.html'), shell({ title:homeTitle, description:homeDescription, pathname:'/', body:homepage() }));
@@ -149,6 +309,9 @@ for (const service of services) {
   await mkdir(dir, { recursive:true });
   await writeFile(path.join(dir, 'index.html'), servicePage(service));
 }
+
+await mkdir(path.join(out, 'service-area'), { recursive:true });
+await writeFile(path.join(out, 'service-area/index.html'), serviceAreaPage());
 
 const notFound = shell({ title:`Page Not Found | ${business.shortName}`, description:'The requested page could not be found.', pathname:'/404', body:`<section class="page-hero"><div class="container"><p class="eyebrow">404</p><h1>That page is not here.</h1><p class="lede">Return to the Republic HVAC homepage or choose a service.</p><div class="page-actions"><a class="button button--primary" href="/">Back to Home</a><a class="button button--ghost" href="/#services">View Services</a></div></div></section>` });
 await writeFile(path.join(out, '404.html'), notFound);
@@ -160,10 +323,10 @@ const robots = configured ? `User-agent: *\nAllow: /\nSitemap: ${business.siteUr
 await writeFile(path.join(out, 'robots.txt'), robots);
 
 if (configured) {
-  const urls = ['/', ...services.map(s => `/${s.slug}/`)];
+  const urls = ['/', '/service-area/', ...services.map(s => `/${s.slug}/`)];
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.map(u => `<url><loc>${esc(pageUrl(u))}</loc></url>`).join('')}</urlset>`;
   await writeFile(path.join(out, 'sitemap.xml'), sitemap);
 }
 
-console.log(`Built ${services.length + 2} HTML pages into dist/`);
+console.log(`Built ${services.length + 3} HTML pages into dist/`);
 console.log(configured ? 'Production indexing enabled.' : 'Preview safety mode: noindex + robots disallow until owner data is configured.');
